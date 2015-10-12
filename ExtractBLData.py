@@ -30,10 +30,11 @@ davis_dict = {
     'Reynold_stress_YY'                 : 'Reynold_stress_YY'        ,
 }
 
-root = '/media/carlos/6E34D2CD34D29783/2015-07_BL/STE_BL_Data/'
+root = './Data'
 
 data_folders = [f for f in os.listdir(root) \
-                if os.path.isdir(os.path.join(root,f))]
+                if os.path.isfile(os.path.join(root,f))
+               and f.endswith(".p")]
 
 def read_data(root,case,variable):
     """ Reads the data. Prioritize reading an existing pickle
@@ -42,10 +43,10 @@ def read_data(root,case,variable):
     import pandas as pd
 
     if os.path.isfile(
-        os.path.join(root,case+'.p')
+        os.path.join(root,case)
     ):
         return pd.read_pickle(
-            os.path.join(root,case+".p")
+            os.path.join(root,case)
         )
     else:
         tecplot_file = os.path.join(root,case,file_dict[variable])
@@ -105,11 +106,6 @@ def read_tecplot(tecplot_file):
             dtype     = np.float
     )
 
-    #data.x         = np.array(map(float,data.x))
-    #data.y         = np.array(map(float,data.y))
-    #data[variable] = np.array(map(float,data[variable]))
-
-
     data = data[
         (data.x < data.x.max()*0.90) &\
         (data.x > data.x.min()*1.10) &\
@@ -117,11 +113,6 @@ def read_tecplot(tecplot_file):
         (data.y > data.y.min()*1.10) 
     ]
 
-    #if not variable in data.columns:
-    #    print("Error: {0} not in file\nAvailable variable: {1}".\
-    #         format(variable,data.columns[2]))
-    #    return None
-    #else:
     return data
 
 def pickle_all_data(root,case_name):
