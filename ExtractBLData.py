@@ -44,8 +44,11 @@ raw_data_root = '/media/carlos/6E34D2CD34D29783/2015-07_BL/STE_BL_Data/'
 data_folders = [f for f in os.listdir(root) \
                 if os.path.isfile(os.path.join(root,f))
                and f.endswith(".p")]
-raw_data_folders = [f for f in os.listdir(raw_data_root) \
-                if os.path.isdir(os.path.join(raw_data_root,f))]
+try:
+    raw_data_folders = [f for f in os.listdir(raw_data_root) \
+                    if os.path.isdir(os.path.join(raw_data_root,f))]
+except OSError:
+    raw_data_folders = []
 
 def read_data(root,case,variable):
     """ Reads the data. Prioritize reading an existing pickle
@@ -370,68 +373,49 @@ def get_bl(case,variable='Length_of_Avg_V'):
         print data.columns
         raise
     points  = -(np.array(map(float,data['x'].values))-te_location[0])
+    data.x = - ( data.x - te_location[0])
+    data = data.sort('x')
 
-    return bl_data,points
+    return bl_data,points,data
 
 def plot_bl(case,variable='Avg_Vy'):
     from matplotlib import pyplot as plt
     import seaborn as sns
     sns.__version__
 
-    x,y = get_bl(case,variable)
+    x,y,df = get_bl(case,variable)
 
     fig = plt.figure()
     ax = plt.subplot(111)
-    ax.plot(x,y,'-')
+    ax.plot(
+        df.Length_of_Avg_V.values/df.Length_of_Avg_V.max(),
+        df.x,
+        '-')
+    ax.plot(
+        df.Length_of_Standard_deviation_of_V.values/\
+        df.Length_of_Standard_deviation_of_V.max(),
+        df.x,
+        '-')
     loc_99,vel_99 = find_bl(case)
     ax.axhline(y=loc_99,ls='--',color='r',lw=2)
-    ax.text(0.9*ax.get_xlim()[1],loc_99,'$\\delta_{{99}} ={0:.2f} $ mm'.\
-            format(loc_99),ha='right',va='bottom')
-    ax.set_xlabel('$v$ [m/s]')
+    ax.text(0.9*ax.get_xlim()[1],
+            loc_99,
+            '$\\delta_{{99}} ={0:.2f} $ mm'.format(loc_99),
+            ha='right',va='bottom'
+           )
+    ax.set_xlabel(
+        '$U/U_\\mathrm{max}$ (blue), $U_\\mathrm{rms}/U_\\mathrm{rms,max}$ (green)'
+    )
     ax.set_ylabel('$y$ [mm]')
     ax.set_ylim(bottom=0)
-    plt.title(case)
-    plt.savefig('images/BL_{0}.png'.format(case))
+    plt.title(case.replace('.p',''))
+    plt.savefig('images/BL_{0}.png'.format(case.replace('.p','')))
     fig.clear()
     
 
-def plot_surface(case,variable='Avg_Vy'):
-    from matplotlib import pyplot as plt
-    import seaborn as sns
-
-    sns.set(context="notebook", style="whitegrid",
-        rc={"axes.axisbelow": False,'image.cmap': 'YlOrRd'})
-
-    df = read_data(root,case,variable)
-    X,Y = np.meshgrid(df.x.unique(),df.y.unique())
-    Z = df[variable].reshape(X.shape)
-    te_location = teloc.TELocations[
-        recognize_case(case)[0]
-    ][1]
-
-    bl_data,points  = get_bl(case=case,variable=variable)
-    delta_99,vel_99 = find_bl(case=case,variable=variable)
-    points   = -points+te_location[0]
-    delta_99 = -delta_99+te_location[0]
-
-    levels = np.linspace(float(Z.min()),float(Z.max())+1,30)
-    fig = plt.figure()
-    ax = plt.subplot(111,aspect=1)
-    ax.contourf(X,Y,Z,levels=levels)
-    C = ax.contour(X, Y, Z, levels=levels,
-                       colors = ('k',),
-                       linewidths = (1,),
-              )
-    ax.clabel(C, inline=1, fontsize=10,color='w')
-    ax.scatter(points,[te_location[1]]*len(points),s=10,color='k')
-    ax.scatter(delta_99,te_location[1],s=40,color='k')
-    ax.scatter(delta_99,te_location[1],marker='x',s=80,color='k')
-    plt.savefig('images/Surface_{0}.png'.format(case))
-    fig.clear()
-
 def find_bl(case,variable='Length_of_Avg_V'):
 
-    vel,loc = get_bl(case,variable)
+    vel,loc,df = get_bl(case,variable)
 
     vel_99 = vel.max()*0.99
     for v,l in zip(vel[::-1],loc[::-1]):
