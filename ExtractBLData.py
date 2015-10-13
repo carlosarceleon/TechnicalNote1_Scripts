@@ -30,11 +30,22 @@ davis_dict = {
     'Reynold_stress_YY'                 : 'Reynold_stress_YY'        ,
 }
 
+need_to_stitch_cases = [
+    'STE_A6_U20_closed_SS',
+    'STE_SS_a12_U20',
+    'STE_SS_a12_U30',
+    'STE_SS_a12_U35',
+    'STE_SS_a12_U40',
+]
+
 root = './Data'
+raw_data_root = '/media/carlos/6E34D2CD34D29783/2015-07_BL/STE_BL_Data/'
 
 data_folders = [f for f in os.listdir(root) \
                 if os.path.isfile(os.path.join(root,f))
                and f.endswith(".p")]
+raw_data_folders = [f for f in os.listdir(raw_data_root) \
+                if os.path.isdir(os.path.join(raw_data_root,f))]
 
 def read_data(root,case,variable):
     """ Reads the data. Prioritize reading an existing pickle
@@ -52,11 +63,89 @@ def read_data(root,case,variable):
         tecplot_file = os.path.join(root,case,file_dict[variable])
         return read_tecplot(tecplot_file)
 
+def stitch_cases(frame1_df,frame2_df,case):
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    sns.__version__
+
+    te_location = teloc.TELocations[
+        recognize_case(case)[0]
+    ][1]
+
+    y1 = find_nearest(float(te_location[1]),frame1_df.y.unique())
+    y2 = find_nearest(float(te_location[1]),frame2_df.y.unique())
+
+    frame1_df_TE = frame1_df[(frame1_df.y == y1)]
+    frame2_df_TE = frame2_df[(frame2_df.y == y2)]
+
+    near_frame_max = frame1_df_TE.Length_of_Avg_V.max()
+
+    frame2_shift = frame2_df_TE[
+        frame2_df_TE.Length_of_Avg_V == find_nearest(
+            near_frame_max,
+            frame2_df_TE.Length_of_Avg_V.values)
+    ].x.values[-1]
+
+    frame2_df_TE = frame2_df_TE[frame2_df_TE.x<=frame2_shift]
+    frame2_df_TE.x = frame2_df_TE.x - frame2_shift + frame1_df_TE.x.min()
+    
+    fig = plt.figure()
+
+    plt.plot(
+        frame1_df_TE.x,
+        frame1_df_TE.Length_of_Avg_V,
+    )
+    plt.plot(
+        frame2_df_TE.x,
+        frame2_df_TE.Length_of_Avg_V,
+    )
+    plt.title(case)
+    plt.savefig('test.png')
+
+    frame2_df.x = frame2_df.x - frame2_shift+frame1_df_TE.x.min()
+    stitched_frames = frame1_df.append(
+        frame2_df
+    )
+    return stitched_frames.sort('x')
 
 
-def read_tecplot(tecplot_file):
-    """Reads in (the second frame present in the given) tecplot file, 
-    and returns a pandas data frame
+def plot_surface(case,variable='Avg_Vy'):
+    from matplotlib import pyplot as plt
+    import seaborn as sns
+
+    sns.set(context="notebook", style="whitegrid",
+        rc={"axes.axisbelow": False,'image.cmap': 'YlOrRd'})
+
+    df = read_data(root,case,variable)
+    X,Y = np.meshgrid(df.x.unique(),df.y.unique())
+    Z = df[variable].reshape(X.shape)
+    te_location = teloc.TELocations[
+        recognize_case(case)[0]
+    ][1]
+
+    bl_data,points  = get_bl(case=case,variable=variable)
+    delta_99,vel_99 = find_bl(case=case,variable=variable)
+    points   = -points+te_location[0]
+    delta_99 = -delta_99+te_location[0]
+
+    levels = np.linspace(float(Z.min()),float(Z.max())+1,30)
+    fig = plt.figure()
+    ax = plt.subplot(111,aspect=1)
+    ax.contourf(X,Y,Z,levels=levels)
+    C = ax.contour(X, Y, Z, levels=levels,
+                       colors = ('k',),
+                       linewidths = (1,),
+              )
+    ax.clabel(C, inline=1, fontsize=10,color='w')
+    ax.scatter(points,[te_location[1]]*len(points),s=10,color='k')
+    ax.scatter(delta_99,te_location[1],s=40,color='k')
+    ax.scatter(delta_99,te_location[1],marker='x',s=80,color='k')
+    plt.savefig('images/Surface_{0}.png'.format(case))
+    fig.clear()
+
+def read_tecplot(root,case_folder,variables_to_read):
+    """Reads in the tecplot file, stitches the 2 frames
+    and returns a pandas data frame with the requested variables
 
     Input:
         tecplot formated file
@@ -64,54 +153,103 @@ def read_tecplot(tecplot_file):
         pandas data frame
 
     """
+    import os
 
-    # Get available variables
-    f = open(tecplot_file,'ro')
+    for var in variables_to_read:
+        tecplot_file = os.path.join(root,case_folder,file_dict[var])
+        # Get available variables
+        f = open(tecplot_file,'ro')
 
-    variables = []
-    # Do two things:
-        # 1) Grab the important info from the header
-        # 2) See where the second frame info starts so that 
-        #       it passes it later to the pandas reader
-    var_string = 0
-    end_line   = 0
-    final_line = 0
-    stop_frame_count = False
-    for line in f:
-        if not stop_frame_count:
-            end_line+=1
-        if 'Frame 2' in line:
-            stop_frame_count = True
-        if not var_string:
-            var_string = re.findall("^VARIABLES[ _A-Za-z0-9,\"=]+",line)
-        if var_string:
-            variables = [
-                v.replace(' ','_').replace("\"","") \
-                for v in var_string[0].replace("VARIABLES = ",'').\
-                split(", ")
-            ]
-            variables = [v for v in variables if len(v)]
-        final_line += 1
-    f.close()
+        variables = []
+        # Do two things:
+            # 1) Grab the important info from the header
+            # 2) See where the second frame info starts so that 
+            #       it passes it later to the pandas reader
+        var_string = 0
+        end_line   = 0
+        final_line = 0
+        stop_frame_count = False
+        for line in f:
+            if not stop_frame_count:
+                end_line+=1
+            if 'Frame 2' in line:
+                stop_frame_count = True
+            if not var_string:
+                var_string = re.findall("^VARIABLES[ _A-Za-z0-9,\"=]+",line)
+            if var_string:
+                variables = [
+                    v.replace(' ','_').replace("\"","") \
+                    for v in var_string[0].replace("VARIABLES = ",'').\
+                    split(", ")
+                ]
+                variables = [v for v in variables if len(v)]
+            final_line += 1
+        f.close()
 
-    lines_to_skip = range(0,3)+range(end_line-1,final_line)
+        lines_to_skip = range(0,3)+range(end_line-1,final_line)
 
-    # Put the data into a data frame
-    data = pd.read_table(
-            tecplot_file,
-            skiprows  = lines_to_skip,
-            names     = variables,
-            sep       = '[ \t]+',
-            index_col = False,
-            dtype     = np.float
-    )
+        if var == variables_to_read[0]:
+            # Put the first frame data into a data frame
+            data_frame1 = pd.read_table(
+                    tecplot_file,
+                    skiprows  = lines_to_skip,
+                    names     = variables,
+                    sep       = '[ \t]+',
+                    index_col = False,
+                    dtype     = np.float
+            )
 
-    data = data[
-        (data.x < data.x.max()*0.90) &\
-        (data.x > data.x.min()*1.10) &\
-        (data.y < data.y.max()*0.90) &\
-        (data.y > data.y.min()*1.10) 
+            # Put the second frame data into a data frame
+            data_frame2 = pd.read_table(
+                    tecplot_file,
+                    skiprows  = range(0,end_line),
+                    names     = variables,
+                    sep       = '[ \t]+',
+                    index_col = False,
+                    dtype     = np.float
+            )
+        else:
+            # Put the first frame data into a data frame
+            df1_tmp = pd.read_table(
+                    tecplot_file,
+                    skiprows  = lines_to_skip,
+                    names     = variables,
+                    sep       = '[ \t]+',
+                    index_col = False,
+                    dtype     = np.float
+            )
+
+            # Put the second frame data into a data frame
+            df2_tmp = pd.read_table(
+                    tecplot_file,
+                    skiprows  = range(0,end_line),
+                    names     = variables,
+                    sep       = '[ \t]+',
+                    index_col = False,
+                    dtype     = np.float
+            )
+            if not var in df2_tmp.columns or not var in df1_tmp.columns:
+                data_frame1[var] = df1_tmp[davis_dict[var]]
+                data_frame2[var] = df2_tmp[davis_dict[var]]
+            else:
+                data_frame1[var] = df1_tmp[var]
+                data_frame2[var] = df2_tmp[var]
+        
+    # Crop the data
+    data_frame1 = data_frame1[
+        (data_frame1.x < data_frame1.x.max()*0.90) &\
+        (data_frame1.x > data_frame1.x.min()*1.10) &\
+        (data_frame1.y < data_frame1.y.max()*0.90) &\
+        (data_frame1.y > data_frame1.y.min()*1.10) 
     ]
+    data_frame2 = data_frame2[
+        (data_frame2.x < data_frame2.x.max()*0.90) &\
+        (data_frame2.x > data_frame2.x.min()*1.10) &\
+        (data_frame2.y < data_frame2.y.max()*0.90) &\
+        (data_frame2.y > data_frame2.y.min()*1.10) 
+    ]
+
+    data = stitch_cases(data_frame1, data_frame2,case_folder)
 
     return data
 
@@ -124,19 +262,22 @@ def pickle_all_data(root,case_name):
     """
 
     variables_to_read = [
-        'Avg_Vx'                  ,
-        'Avg_Vy'                  ,
-        'Length_of_Avg_V'
+        'Length_of_Avg_V',
+        'Length_of_Standard_deviation_of_V'
     ]
 
-    for v in variables_to_read:
-        if v == variables_to_read[0]:
-            tecplot_file = os.path.join(root,case_name,file_dict[v])
-            df = read_tecplot(tecplot_file)
-        else:
-            tecplot_file = os.path.join(root,case_name,file_dict[v])
-            df_tmp = read_tecplot(tecplot_file)
-            df[v] = df_tmp[v]
+    df = read_tecplot(raw_data_root,case_name,variables_to_read)
+    #for v in variables_to_read:
+    #    if v == variables_to_read[0]:
+    #        tecplot_file = os.path.join(root,case_name,file_dict[v])
+    #        df = read_tecplot(tecplot_file)
+    #    else:
+    #        tecplot_file = os.path.join(root,case_name,file_dict[v])
+    #        df_tmp = read_tecplot(tecplot_file)
+    #        try:
+    #            df[v] = df_tmp[v]
+    #        except KeyError:
+    #            df[v] = df_tmp[davis_dict[v]]
 
     df.to_pickle(os.path.join(root,case_name+'.p'))
 
@@ -198,7 +339,7 @@ def recognize_case(case_name):
     case_parameters = [alpha,side,test_section]
     return case_key, case_parameters
 
-def get_bl(case,variable='Avg_Vy'):
+def get_bl(case,variable='Length_of_Avg_V'):
     """ Get the TE boundary layer information and return it as an array
 
     Input:
@@ -208,6 +349,7 @@ def get_bl(case,variable='Avg_Vy'):
         locations of those velocity vectors
     """
 
+    root = './Data'
     df = read_data(root,case,variable)
     te_location = teloc.TELocations[
         recognize_case(case)[0]
@@ -221,7 +363,12 @@ def get_bl(case,variable='Avg_Vy'):
         (df.x < x)
     ]
 
-    bl_data =   np.array(map(float,data[variable].values))
+    try:
+        bl_data =   np.array(map(float,data[variable].values))
+    except KeyError:
+        print root,case,variable
+        print data.columns
+        raise
     points  = -(np.array(map(float,data['x'].values))-te_location[0])
 
     return bl_data,points
@@ -236,10 +383,10 @@ def plot_bl(case,variable='Avg_Vy'):
     fig = plt.figure()
     ax = plt.subplot(111)
     ax.plot(x,y,'-')
-    loc_99,vel_99 = find_bl(case,variable)
-    ax.scatter(vel_99,loc_99,marker='o',color='r',s=100)
-    ax.text(vel_99-2,loc_99,'$\\delta_{{99}} ={0:.2f} $ mm'.\
-            format(loc_99),ha='right',va='center')
+    loc_99,vel_99 = find_bl(case)
+    ax.axhline(y=loc_99,ls='--',color='r',lw=2)
+    ax.text(0.9*ax.get_xlim()[1],loc_99,'$\\delta_{{99}} ={0:.2f} $ mm'.\
+            format(loc_99),ha='right',va='bottom')
     ax.set_xlabel('$v$ [m/s]')
     ax.set_ylabel('$y$ [mm]')
     ax.set_ylim(bottom=0)
@@ -282,7 +429,7 @@ def plot_surface(case,variable='Avg_Vy'):
     plt.savefig('images/Surface_{0}.png'.format(case))
     fig.clear()
 
-def find_bl(case,variable='Avg_Vy'):
+def find_bl(case,variable='Length_of_Avg_V'):
 
     vel,loc = get_bl(case,variable)
 
@@ -294,11 +441,130 @@ def find_bl(case,variable='Avg_Vy'):
 
     return delta_99,vel_99
 
-#df = read_tecplot(os.path.join(root,data_folders[0],'B00001.dat'))
-#variable = 'Length_of_Standard_deviation_of_V'#'Avg_Vy'
-variable = 'Length_of_Avg_V'
-for case in data_folders:
-    #plot_bl(case,variable)
-    plot_surface(case,variable)
-    #pickle_all_data(root,case)
+def make_csv(out_file="BL_Data_Info.csv"):
+    import pandas as pd
+    from re import findall
+    from os.path import join
+
+    bl_info_DF = pd.DataFrame(
+        columns = [
+            'U_inf',
+            'alpha',
+            'Delta_99',
+            'U_99',
+            'Side',
+            'Test_section'
+        ])
+
+    variable = 'Length_of_Avg_V'
+    for case in data_folders:
+        alpha = findall("_[aA][0-9][0-9]?",case)[0].\
+                replace("_a","").\
+                replace("_A","")
+        U_inf = findall("_U[0-9][0-9]?",case)[0].replace("_U","")
+        if len(findall("[PS]S",case)):
+            side  = findall("[PS]S",case)[0]
+        else: side = "NA"
+        if len(findall("closed",case)):
+            test_section  = findall("closed",case)[0]
+        else: test_section = "open"
+        Delta_99,U_99 = find_bl(case,variable=variable)
+
+        bl_info_DF = bl_info_DF.append({
+            'U_inf'        : float(U_inf),
+            'alpha'        : float(alpha),
+            'Delta_99'     : float(Delta_99),
+            'U_99'         : float(U_99),
+            'Side'         : side,
+            'Test_section' : test_section
+        },ignore_index=True)
+
+    if out_file:
+        bl_info_DF.to_csv(join("outputs",out_file))
+    return bl_info_DF
+
+def plot_all_deltas(out_file="All_Deltas.png"):
+    import matplotlib.pyplot as plt 
+    import seaborn as sns
+    from numpy import argmin,abs
+    import os
+    sns.__version__
+
+    bl_info_DF = make_csv(out_file='')
+    bl_info_DF = bl_info_DF.sort("U_inf")
+
+    cmap_SS = sns.color_palette("Reds_r",len(bl_info_DF.U_inf.unique()))
+    cmap_PS = sns.color_palette("Blues_r",len(bl_info_DF.U_inf.unique()))
+
+    # Marker defines if open or closed
+    marker = {
+        'open'   : 'o',
+        'closed' : 'x',
+    }
+    fig,ax = plt.subplots(1,1)
+    for row_index, row in bl_info_DF.iterrows():
+        if row.Side == 'SS' or row.Side == 'NA':
+            cmap = cmap_SS
+        else:
+            cmap = cmap_PS
+
+        if row.Side=='NA':
+            label_side = ''
+        else: label_side = row.Side
+        label = "$U_\\infty = {0}$ m/s {1}".\
+        format(row.U_inf,label_side)
+
+        ax.scatter(
+            row.alpha,
+            row.Delta_99,
+            color = cmap[
+                argmin(abs(bl_info_DF.U_inf.unique()-row.U_inf))
+            ],
+            marker = marker[row.Test_section],
+            s=75,
+            label = label
+        )
+        ax.annotate(label,
+                    xy=(row.alpha,row.Delta_99),
+                    xytext=(row.alpha+1,row.Delta_99+0.5),
+                    arrowprops=dict(
+                        facecolor='black', 
+                        arrowstyle='->',
+                        lw=2
+                    ),
+                   )
+    ax.set_xticks([0,6,12])
+    ax.set_xlim(-2,16)
+    ax.set_xlabel("$\\alpha_g$ [deg]")
+    ax.set_ylabel("$\\delta_{99}$ [mm]")
+    #ax.legend(loc='best')
+    plt.savefig(os.path.join('images',out_file))
+
+
+variable = 'Length_of_Standard_deviation_of_V'
+#variable = 'Length_of_Avg_V'
+import os
+variables_to_read = [
+    'Length_of_Avg_V',
+    'Length_of_Standard_deviation_of_V'
+]
+#for case in [raw_data_folders[2]]:
+#    read_tecplot(raw_data_root,case,variables_to_read)
+#    pickle_all_data(raw_data_root,case)
+#for case in data_folders:
+#    plot_bl(case,variable)
+    #plot_surface(case,variable)
+#plot_all_deltas()
+
+def plot_all_BLs():
+    for case in data_folders:
+        plot_bl(case,variable)
+
+def pickle():
+    for case in raw_data_folders:
+        pickle_all_data(raw_data_root,case)
+
+#pickle()
+plot_all_BLs()
+
 
