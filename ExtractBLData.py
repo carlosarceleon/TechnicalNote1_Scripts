@@ -66,7 +66,7 @@ def read_data(root,case,variable):
         tecplot_file = os.path.join(root,case,file_dict[variable])
         return read_tecplot(tecplot_file)
 
-def stitch_cases(frame1_df,frame2_df,case):
+def stitch_cases(frame1_df,frame2_df,case,plot=False):
     import matplotlib.pyplot as plt
     import seaborn as sns
     sns.__version__
@@ -90,24 +90,28 @@ def stitch_cases(frame1_df,frame2_df,case):
     ].x.values[-1]
 
     frame2_df_TE = frame2_df_TE[frame2_df_TE.x<=frame2_shift]
-    frame2_df_TE.x = frame2_df_TE.x - frame2_shift + frame1_df_TE.x.min()
+    frame2_df_TE.x = frame2_df_TE.x - \
+            frame2_shift + frame1_df_TE.x.min()
     
-    fig = plt.figure()
+    if plot:
+        fig = plt.figure()
 
-    plt.plot(
-        frame1_df_TE.x,
-        frame1_df_TE.Length_of_Avg_V,
-    )
-    plt.plot(
-        frame2_df_TE.x,
-        frame2_df_TE.Length_of_Avg_V,
-    )
-    plt.title(case)
-    plt.savefig('test.png')
+        plt.plot(
+            frame1_df_TE.x,
+            frame1_df_TE.Length_of_Avg_V,
+        )
+        plt.plot(
+            frame2_df_TE.x,
+            frame2_df_TE.Length_of_Avg_V,
+        )
+        plt.title(case)
+        plt.savefig('test.png')
+
+    frame2_df_TE = frame2_df_TE[frame2_df_TE.x<frame1_df_TE.x.min()]
 
     frame2_df.x = frame2_df.x - frame2_shift+frame1_df_TE.x.min()
-    stitched_frames = frame1_df.append(
-        frame2_df
+    stitched_frames = frame1_df_TE.append(
+        frame2_df_TE
     )
     return stitched_frames.sort('x')
 
@@ -265,22 +269,26 @@ def pickle_all_data(root,case_name):
     """
 
     variables_to_read = [
+        'Avg_Vx',
+        'Avg_Vy',
         'Length_of_Avg_V',
         'Length_of_Standard_deviation_of_V'
     ]
 
     df = read_tecplot(raw_data_root,case_name,variables_to_read)
-    #for v in variables_to_read:
-    #    if v == variables_to_read[0]:
-    #        tecplot_file = os.path.join(root,case_name,file_dict[v])
-    #        df = read_tecplot(tecplot_file)
-    #    else:
-    #        tecplot_file = os.path.join(root,case_name,file_dict[v])
-    #        df_tmp = read_tecplot(tecplot_file)
-    #        try:
-    #            df[v] = df_tmp[v]
-    #        except KeyError:
-    #            df[v] = df_tmp[davis_dict[v]]
+
+    # Only extract the trailing edge wall normal line
+    te_location = teloc.TELocations[
+        recognize_case(case_name)[0]
+    ][1]
+    x = find_nearest(float(te_location[0]),df.x.unique())
+    y = find_nearest(float(te_location[1]),df.y.unique())
+
+    df = df[
+        (df.y == y) &\
+        (df.x < x)
+    ]
+
 
     df.to_pickle(os.path.join(root,case_name+'.p'))
 
@@ -352,62 +360,112 @@ def get_bl(case,variable='Length_of_Avg_V'):
         locations of those velocity vectors
     """
 
+    from numpy import sin,cos,tan
+    from math import atan
+
     root = './Data'
-    df = read_data(root,case,variable)
     te_location = teloc.TELocations[
         recognize_case(case)[0]
     ][1]
 
-    x = find_nearest(float(te_location[0]),df.x.unique())
-    y = find_nearest(float(te_location[1]),df.y.unique())
+    df = read_data(root,case,variable)
 
-    data = df[
-        (df.y == y) &\
-        (df.x < x)
-    ]
+    # Get the angular value of the flow in the "freestream"
+    
+    freestream_location_min = df.x.min()*0.95
+    freestream_location_max = df.x.min()*0.80
 
-    try:
-        bl_data =   np.array(map(float,data[variable].values))
-    except KeyError:
-        print root,case,variable
-        print data.columns
-        raise
-    points  = -(np.array(map(float,data['x'].values))-te_location[0])
-    data.x = - ( data.x - te_location[0])
-    data = data.sort('x')
+    vy_in_the_freestream = df[
+        (df.x < freestream_location_max) & \
+        (df.x > freestream_location_min) 
+    ].Avg_Vy.mean()
 
-    return bl_data,points,data
+    vx_in_the_freestream = df[
+        (df.x < freestream_location_max) & \
+        (df.x > freestream_location_min) 
+    ].Avg_Vx.mean()
+    print vx_in_the_freestream,vy_in_the_freestream
+
+    deviation_angle = atan(vx_in_the_freestream/vy_in_the_freestream)
+
+    df.Avg_Vy = df.Avg_Vy / cos(-deviation_angle)
+    df.Avg_Vx = df.Avg_Vy * tan(-deviation_angle)
+
+    bl_data =   np.array(map(float,df.Avg_Vy.values))
+
+    points  = -(np.array(map(float,df['x'].values))-te_location[0])
+    df.x = - ( df.x - te_location[0])
+    df = df.sort('x')
+
+    df = remove_outliers(df)
+
+    bl_data = moving_average(bl_data,n=50)
+    df = get_averaged_data(df,n=50)
+
+    return bl_data,points,df
+
+def remove_outliers(df):
+    from scipy import stats
+    return df[(np.abs(stats.zscore(df)) < 5).all(axis=1)]
+
+def get_averaged_data(df,n=50):
+    import pandas as pd
+
+    variables = df.columns
+    new_df = pd.DataFrame(columns=variables)
+    for v in variables:
+        new_df[v] = moving_average(df[v].values,n=n)
+
+    return new_df
+
+def moving_average(a, n=3) :
+    ret = np.cumsum(a, dtype=float)
+    ret[n:] = ret[n:] - ret[:-n]
+    return ret[n - 1:] / n
 
 def plot_bl(case,variable='Avg_Vy'):
     from matplotlib import pyplot as plt
     import seaborn as sns
-    sns.__version__
+    current_palette = sns.color_palette()
 
     x,y,df = get_bl(case,variable)
 
     fig = plt.figure()
     ax = plt.subplot(111)
-    ax.plot(
-        df.Length_of_Avg_V.values/df.Length_of_Avg_V.max(),
+    ax.scatter(
+        df.Avg_Vy.values/df.Avg_Vy.max(),
         df.x,
-        '-')
-    ax.plot(
+        marker='x',
+        c=current_palette[0]
+        )
+    ax.scatter(
         df.Length_of_Standard_deviation_of_V.values/\
         df.Length_of_Standard_deviation_of_V.max(),
         df.x,
-        '-')
+        marker='x',
+        c=current_palette[1]
+        )
     loc_99,vel_99 = find_bl(case)
+    loc_99 = float(loc_99)
     ax.axhline(y=loc_99,ls='--',color='r',lw=2)
-    ax.text(0.9*ax.get_xlim()[1],
+    ax.text(0.8*ax.get_xlim()[1],
             loc_99,
             '$\\delta_{{99}} ={0:.2f} $ mm'.format(loc_99),
             ha='right',va='bottom'
+           )
+    ax.text(0.87*ax.get_xlim()[1],
+            df.x.max(),
+            '$U ={0:.2f} $ m/s'.format(
+                df[df.x==df.x.max()].Avg_Vy.values[0]
+            ),
+            ha='right',va='center',rotation=-90
            )
     ax.set_xlabel(
         '$U/U_\\mathrm{max}$ (blue), $U_\\mathrm{rms}/U_\\mathrm{rms,max}$ (green)'
     )
     ax.set_ylabel('$y$ [mm]')
-    ax.set_ylim(bottom=0)
+    ax.set_ylim(0,45)
+    ax.set_xlim(0,1)
     plt.title(case.replace('.p',''))
     plt.savefig('images/BL_{0}.png'.format(case.replace('.p','')))
     fig.clear()
@@ -417,11 +475,19 @@ def find_bl(case,variable='Length_of_Avg_V'):
 
     vel,loc,df = get_bl(case,variable)
 
-    vel_99 = vel.max()*0.99
-    for v,l in zip(vel[::-1],loc[::-1]):
-        if v>vel_99:
-            delta_99 = l
-            break
+    vel_99 = df.Avg_Vy.max()*0.99
+    delta_99 = df[df.Avg_Vy==find_nearest(vel_99,df.Avg_Vy.values)].x
+    vy_99 = df[
+        df.Avg_Vy==find_nearest(vel_99,df.Avg_Vy.values)
+    ].Avg_Vy.values[0]
+    vx_99 = df[
+        df.Avg_Vy==find_nearest(vel_99,df.Avg_Vy.values)
+    ].Avg_Vx.values[0]
+    print vx_99, vy_99
+    #for v,l in zip(vel[::-1],loc[::-1]):
+    #    if v>vel_99:
+    #        delta_99 = l
+    #        break
 
     return delta_99,vel_99
 
@@ -529,16 +595,19 @@ variable = 'Length_of_Standard_deviation_of_V'
 #variable = 'Length_of_Avg_V'
 import os
 variables_to_read = [
+    'Avg_Vx',
+    'Avg_Vy',
     'Length_of_Avg_V',
     'Length_of_Standard_deviation_of_V'
 ]
+
 #for case in [raw_data_folders[2]]:
 #    read_tecplot(raw_data_root,case,variables_to_read)
 #    pickle_all_data(raw_data_root,case)
 #for case in data_folders:
 #    plot_bl(case,variable)
     #plot_surface(case,variable)
-#plot_all_deltas()
+plot_all_deltas()
 
 def plot_all_BLs():
     for case in data_folders:
@@ -549,6 +618,6 @@ def pickle():
         pickle_all_data(raw_data_root,case)
 
 #pickle()
-plot_all_BLs()
+#plot_all_BLs()
 
 
