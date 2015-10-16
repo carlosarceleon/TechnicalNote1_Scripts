@@ -498,7 +498,7 @@ def make_csv(out_file="BL_Data_Info.csv"):
 
     bl_info_DF = pd.DataFrame(
         columns = [
-            'U_inf',
+            'U',
             'alpha',
             'Delta_BL',
             'U_BL',
@@ -521,7 +521,7 @@ def make_csv(out_file="BL_Data_Info.csv"):
         Delta_BL,U_BL = find_bl(case,variable=variable)
 
         bl_info_DF = bl_info_DF.append({
-            'U_inf'        : float(U_inf),
+            'U'            : float(U_inf),
             'alpha'        : float(alpha),
             'Delta_BL'     : float(Delta_BL),
             'U_BL'         : float(U_BL),
@@ -607,17 +607,17 @@ def plot_all_deltas(out_file="All_Deltas.png"):
 ##for case in data_folders:
 ##    plot_bl(case,variable)
 #    #plot_surface(case,variable)
-plot_all_deltas()
+#plot_all_deltas()
 #
 #def plot_all_BLs():
 #    for case in data_folders:
 #        plot_bl(case,variable)
 #
-def pickle():
-    for case in raw_data_folders:
-        pickle_all_data(raw_data_root,case)
+#def pickle():
+#    for case in raw_data_folders:
+#        pickle_all_data(raw_data_root,case)
 #
-#pickle()
+##pickle()
 #plot_all_BLs()
 
 
