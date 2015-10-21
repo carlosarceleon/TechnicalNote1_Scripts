@@ -15,11 +15,11 @@ from matplotlib.ticker import ScalarFormatter
 #sns.set(font='serif',font_scale=2.5,style='whitegrid')
 #rc('font',family='serif', serif='cm10')
 #
-#line_styles = ['--','-.',':']
-#markers = [
-#        u'o', u'v', u'^', u'<', u'>', u'8', u's', u'p', u'*', 
-#    u'h', u'H', u'D', u'd'
-#]
+line_styles = ['--','-.',':']
+markers = [
+        u'o', u'v', u'^', u'<', u'>', u'8', u's', u'p', u'*', 
+    u'h', u'H', u'D', u'd'
+]
 #
 #colors = [
 #        '#013F70',
@@ -629,6 +629,18 @@ def run_missing_folders():
     process_integration(cases=get_missing_cases(
         "../",get_all_cases("../")
     ))
+
+def move_data_to_local(origin,target):
+    from shutil import copy
+    from os.path import join
+
+    acoustic_data_subdirs = join(
+        'CBFMaps_2048','integration','psd_pointsource.mat'
+    )
+
+    copy(join(origin,acoustic_data_subdirs),target)
+
+
 
 ####################################################################
 ##           Solid, different alpha U35, phi 6

@@ -117,6 +117,115 @@ def stitch_cases(frame1_df,frame2_df,case,plot=False):
     )
     return stitched_frames.sort('x')
 
+def extract_case_details_from_name(case_name):
+    """ Returns a dictionary of the case details that are extracted
+    from the passed name
+
+    Input: case data file name
+    Output: a dictionary
+    """
+    from re import findall
+
+    alpha = int(findall("[Aa][0-9][0-9]?",case_name)[0]\
+            .replace('A','')\
+            .replace('a',''))
+    speed = int(findall("U[0-9][0-9]",case_name)[0].replace("U",''))
+    if 'PS' in case_name or "SS" in case_name:
+        side  = findall("[PS]S",case_name)[0]
+    else:
+        side = "zero alpha"
+    if "closed" in case_name:
+        test_section = 'closed'
+    elif "open" in case_name:
+        test_section = 'open'
+    else:
+        test_section = 'unknown'
+
+    case_details = {
+        'alpha'        : alpha,
+        'speed'        : speed,
+        'side'         : side,
+        'test_section' : test_section
+    }
+    return case_details
+
+def build_plot_case_label_from_dict(case_details):
+    """ Turns the case details dictionary and returns a label that
+    can be used for plotting
+
+    Input: case details dictionary
+    Output: label
+    """
+
+    label = "$\\alpha = {{{0}}}^\\circ$, $U_\\infty = {{{1}}}\\,\\mathrc{{m/s}}$".\
+            format(case_details['alpha'],case_details['speed'])
+    return label
+
+
+def plot_article_bls(fig_name = 'BoundaryLayers.png'):
+    from matplotlib import pyplot as plt
+    import pandas as pd
+    import seaborn as sns
+    from matplotlib import rc
+    from numpy import argmin,array
+    rc('text',usetex=True)
+
+    sns.set_context('paper')
+    sns.set_style("whitegrid")
+    sns.set(font='serif',font_scale=2.5,style='whitegrid')
+    rc('font',family='serif', serif='cm10')
+
+    line_styles = ['--','-.',':']
+    markers = [
+            u'o', u'v', u'^', u'<', u'>', u'8', u's', u'p', u'*', 
+        u'h', u'H', u'D', u'd'
+    ]
+
+    colors = [
+            '#013F70',
+            '#70A288',
+            '#D5896F',
+            '#BB9F06',
+            '#DAB785',
+            ]
+
+    bls_df = pd.DataFrame()
+    for case in data_folders:
+        x,y,df = get_bl(case,variable='Avg_Vy')
+        df['case'] = case
+        bls_df = bls_df.append(df)
+
+    cases = bls_df.case.unique()
+    alphas = array([0,6,12])
+
+    fig,ax = plt.subplots(1,1)
+    for case in [c for c in cases \
+                 if not 'closed' in c and not 'PS' in c]:
+
+        case_dict = extract_case_details_from_name( case )       
+
+        data = bls_df[bls_df.case==case]
+        vel  = data.Avg_Vy / data.Avg_Vy.max()
+        y    = data.x
+
+        ax.scatter(vel,y,
+                   label = build_plot_case_label_from_dict(case_dict),
+                   marker = markers[
+                       argmin(abs(
+                           case_dict['alpha'] - alphas
+                       ))
+                   ],
+                   color = colors[
+                       argmin(abs(
+                           case_dict['alpha'] - alphas
+                       ))
+                   ],
+                   alpha = 0.2
+                  )
+
+    plt.savefig(fig_name)
+
+    return bls_df
 
 def plot_surface(case,variable='Avg_Vy'):
     from matplotlib import pyplot as plt
@@ -406,8 +515,11 @@ def get_bl(case,variable='Length_of_Avg_V'):
     return bl_data,points,df
 
 def remove_outliers(df):
+    #def reject_outliers(data, m=2):
+    #    return data[abs(data - np.mean(data)) < m * np.std(data)]
     from scipy import stats
-    return df[(np.abs(stats.zscore(df)) < 5).all(axis=1)]
+    return df[(np.abs(stats.zscore(df)) < 3).all(axis=1)]
+    #df.Avg_Vy = df.Avg_Vy
 
 def get_averaged_data(df,n=50):
     import pandas as pd
