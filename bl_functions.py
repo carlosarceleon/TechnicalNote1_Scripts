@@ -242,7 +242,7 @@ def plot_surface(case,variable='Avg_Vy'):
     ][1]
 
     bl_data,points  = get_bl(case=case,variable=variable)
-    delta_BL,vel_BL = find_bl(case=case,variable=variable)
+    delta_BL,vel_BL,U_max = find_bl(case=case,variable=variable)
     points   = -points+te_location[0]
     delta_BL = -delta_BL+te_location[0]
 
@@ -558,7 +558,7 @@ def plot_bl(case,variable='Avg_Vy'):
         marker='x',
         c=current_palette[1]
         )
-    loc_BL,vel_BL = find_bl(case)
+    loc_BL,vel_BL,U_max = find_bl(case)
     loc_BL = float(loc_BL)
     ax.axhline(y=loc_BL,ls='--',color='r',lw=2)
     ax.text(0.8*ax.get_xlim()[1],
@@ -601,7 +601,7 @@ def find_bl(case,variable='Length_of_Avg_V'):
     #        delta_BL = l
     #        break
 
-    return delta_BL,vel_BL
+    return delta_BL,vel_BL,df.Avg_Vy.max()
 
 def make_csv(out_file="BL_Data_Info.csv"):
     import pandas as pd
@@ -630,10 +630,11 @@ def make_csv(out_file="BL_Data_Info.csv"):
         if len(findall("closed",case)):
             test_section  = findall("closed",case)[0]
         else: test_section = "open"
-        Delta_BL,U_BL = find_bl(case,variable=variable)
+        Delta_BL,U_BL,U_max = find_bl(case,variable=variable)
 
         bl_info_DF = bl_info_DF.append({
             'U'            : float(U_inf),
+            'U_max'        : U_max,
             'alpha'        : float(alpha),
             'Delta_BL'     : float(Delta_BL),
             'U_BL'         : float(U_BL),

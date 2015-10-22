@@ -15,7 +15,7 @@ from matplotlib.ticker import ScalarFormatter
 #sns.set(font='serif',font_scale=2.5,style='whitegrid')
 #rc('font',family='serif', serif='cm10')
 #
-line_styles = ['--','-.',':']
+line_styles = ['-','--','-.',':']
 markers = [
         u'o', u'v', u'^', u'<', u'>', u'8', u's', u'p', u'*', 
     u'h', u'H', u'D', u'd'
@@ -122,16 +122,14 @@ def compare_cases(cases={},plot_name="comparison.png",
         spectra.append(read_mat_file(
             os.path.join(root_folder,
                          case,
-                         "CBFMaps_2048",
-                         "integration",
-                         spectrum_file_name)
+                         )
         ))
     if relative_to:
        for case in relative_to.keys():
            relative_to_spectra.append(
                read_mat_file(os.path.join(
-                   root_folder,case,"CBFMaps_2048","integration",
-                   spectrum_file_name))
+                   root_folder,case,
+                   ))
            )
 
     spectra_df = []
@@ -230,6 +228,211 @@ def compare_cases(cases={},plot_name="comparison.png",
     plt.grid(True,which='both')
     plt.savefig(plot_name,bbox_inches='tight')
 
+def resolve_case_parameters(case_mat_file):
+    from re import findall
+
+    U = int(findall(
+        "U[0-9][0-9]",case_mat_file
+    )[0].replace('U',''))
+    alpha = int(findall(
+        "a[0-9][0-9]?",case_mat_file
+    )[0].replace('a',''))
+    device = findall(
+        "psd_[A-Za-z0-9]+",case_mat_file
+    )[0].replace('psd_','')
+    if device == "STE":
+        phi = 0
+    else:
+        phi = int(findall(
+            "p[0-9]",case_mat_file
+        )[0].replace('p',''))
+
+    case_parameters = {
+        'U'      : U,
+        'alpha'  : alpha,
+        'device' : device,
+        'phi'    : phi
+    }
+
+    return case_parameters
+
+def mat_to_df(root,case_mat_file):
+    import pandas as pd
+    from os.path import join
+
+    case_spectrum   = read_mat_file(join(root,case_mat_file))
+    case_parameters = resolve_case_parameters(case_mat_file)
+
+    case_df_narrowband = pd.DataFrame(
+        data = {
+            "f"      : case_spectrum['f'][0],
+            'psd'    : case_spectrum['psd'][0]
+            }, 
+        index=range(len(case_spectrum['f'][0]))
+    )
+
+    case_df_narrowband = case_df_narrowband[case_df_narrowband.psd!=0]
+
+    case_df_narrowband.dB = 10.*array(
+        map(log10,case_df_narrowband.psd)
+    )
+
+    third_oct_psd,third_oct_freqs = narrow_to_third_octave(
+        case_df_narrowband.f,
+        case_df_narrowband.dB
+    )
+    case_df_third_octave = pd.DataFrame(
+        data = {
+            'f'   : third_oct_freqs,
+            'dB' : third_oct_psd
+        }
+    )
+    
+    case_df_narrowband['alpha']    = case_parameters['alpha']
+    case_df_narrowband['phi']      = case_parameters['phi']
+    case_df_narrowband['U']        = case_parameters['U']
+    case_df_narrowband['device']   = case_parameters['device']
+
+    case_df_third_octave['alpha']  = case_parameters['alpha']
+    case_df_third_octave['phi']    = case_parameters['phi']
+    case_df_third_octave['U']      = case_parameters['U']
+    case_df_third_octave['device'] = case_parameters['device']
+
+    return case_df_narrowband,case_df_third_octave
+
+def build_plot_data_name(case_df):
+
+    if case_df.device.unique()[0] == 'STE':
+        device = "Straight"
+    else:
+        device = "Serrated"
+    label = "{{{3}}}, $\\alpha_g = {{{0}}}^\\circ,\, "+\
+            "\\varphi = {{{1}}}^\\circ,\,U_\\infty = {{{2}}}$ m/s".\
+            format(case_df.alpha,case_df.phi,case_df.U,device)
+    return label
+
+def get_index(value,available_values):
+    from numpy import array,argmin,unique,sort
+
+    return argmin(abs(sort(unique(array(available_values)))-value))
+
+def plot_spectra(root,cases,third_octave=True,
+                 output='case_spectra.png',crossover=True):
+    def my_annotate(ax, s, xy_arr=[], *args, **kwargs):
+        ans = []
+        an = ax.annotate(s, xy_arr[0], *args, **kwargs)
+        ans.append(an)
+        d = {}
+        try:
+            d['xycoords'] = kwargs['xycoords']
+        except KeyError:
+          pass
+        try:
+            d['arrowprops'] = kwargs['arrowprops']
+        except KeyError:
+            pass
+        for xy in xy_arr:
+            an = ax.annotate(s, xy, alpha=0.0, xytext=(0,0), 
+                             textcoords=an, **d)
+            ans.append(an)
+        return ans
+
+    import matplotlib.pyplot as plt
+    import matplotlib.lines as mlines
+    import seaborn as sns
+    from matplotlib import rc
+
+    rc('text',usetex=True)
+
+    sns.set_context('paper')
+    sns.set_style("whitegrid")
+    sns.set(font='serif',font_scale=2.0,style='whitegrid')
+    rc('font',family='serif', serif='cm10')
+
+    velocities = [30,35,40]
+    alphas     = [0,6,12]
+    phis       = [0,6]
+    palette = sns.color_palette("cubehelix", n_colors=len(alphas)+1)
+    lines = ["--","-.",":"]
+
+    fig,ax = plt.subplots(1,1)
+    crossovers = []
+    for case in cases:
+        narrowband_data,third_octave_data = mat_to_df(root,case)
+        if third_octave: ac_data = third_octave_data
+        else:            ac_data = narrowband_data
+
+        if ac_data.device.unique()[0] == 'STE': ls = '-'
+        else: ls = lines[get_index(ac_data.phi.unique()[0],phis)]
+
+        if not "STE" in case:
+            ste_case = case.replace(ac_data.device.unique()[0],"STE").\
+                    replace("_p{0}".format(ac_data.phi.unique()[0]),'')
+            crossover_f = get_crossover(root_folder=root,
+                                        case=case,
+                                        relative_to=ste_case
+                                       )
+            if crossover_f:
+                crossovers.append(crossover_f/1000.)
+
+        color = palette[get_index(ac_data.alpha.unique()[0],alphas)]
+        ax.plot(
+            ac_data.f/1000.,
+            ac_data.dB,
+            ls = ls,
+            color = color
+        )
+
+    crossover_levels = [-72,-65,-67]
+
+    my_annotate(ax,
+            '$f_0$',
+            xy_arr=zip(crossovers,crossover_levels), xycoords='data',
+            xytext=(3.1,-63), textcoords='data',
+            arrowprops=dict(arrowstyle="-",
+                            connectionstyle="arc3,rad=0.2",
+                            lw=2,
+                            fc="k"),
+                fontsize=20
+               )
+
+    ax.set_xscale('log')
+    ax.set_xticks([1,2,3,4,5])
+    ax.set_xlim(1,5.000)
+    ax.set_ylim(-95,-58)
+    ax.set_ylabel("Trailing edge noise emissions [dB]")
+    ax.set_xlabel("Frequency [kHz]")
+    ax.get_xaxis().set_major_formatter(ScalarFormatter())
+    plt.setp( ax.xaxis.get_majorticklabels(), rotation=0 )
+
+    a0_legend   = mlines.Line2D([], [], color=palette[0])
+    a6_legend   = mlines.Line2D([], [], color=palette[1])
+    a12_legend  = mlines.Line2D([], [], color=palette[2])
+    ste_legend  = mlines.Line2D([], [], color='k',ls='-')
+    p0_legend   = mlines.Line2D([], [], color='k',ls='--')
+    p6_legend   = mlines.Line2D([], [], color='k',ls='-.')
+
+    plt.legend([
+        a0_legend,
+        a6_legend,
+        a12_legend,
+        p0_legend,
+        p6_legend,
+        ste_legend,
+    ],
+        [
+            '$\\alpha_g=0^\\circ$',
+            '$\\alpha_g=6^\\circ$',
+            '$\\alpha_g=12^\\circ$',
+            '$\\varphi=0^\\circ$',
+            '$\\varphi=6^\\circ$',
+            'Straight edge',
+        ],
+        loc='lower left',
+        ncol=2,
+    )
+    plt.savefig(output,bbox_inches='tight')
+
 def interpolate_to_find_crossover(frequencies,spl):
     from scipy.interpolate import UnivariateSpline
 
@@ -242,18 +445,15 @@ def interpolate_to_find_crossover(frequencies,spl):
     if len(root)==1: return root[0]
     else: return 0
 
-def get_crossover(root_folder,case,relative_to,
-                  campaign='MarchData'):
+def get_crossover(root_folder,case,relative_to):
     import pandas as pd
 
-    spectrum_file_name = 'psd_pointsource.mat'
-
     case_spectrum = read_mat_file(os.path.join(
-        root_folder,case,"CBFMaps_2048","integration",
-        spectrum_file_name))
+        root_folder,case,
+        ))
     relative_to_spectrum = read_mat_file(os.path.join(
-            root_folder,relative_to,"CBFMaps_2048","integration",
-            spectrum_file_name))
+            root_folder,relative_to
+            ))
 
 
     case_spectrum_df = pd.DataFrame(
@@ -295,30 +495,27 @@ def get_crossover(root_folder,case,relative_to,
     )
     return crossover
 
-def compare_cases_relative(cases={},relative_to={},
+def compare_cases_relative(root_folder,cases={},relative_to={},
                            plot_name="comparison_relative.png",
                            title=True,campaign='MarchData'):
     from numpy import array
 
     spectrum_file_name = 'psd_pointsource.mat'
 
-    root_folder = os.path.join(
-        "/media/carlos/6E34D2CD34D29783/2015-03_SerrationAcoustics/",
-        campaign)
-    palette = sns.color_palette("cubehelix", n_colors=len(cases)+1)
+    palette = sns.color_palette("cubehelix_r", n_colors=len(cases))
 
     spectra = []
     relative_to_spectra = []
     for case in cases.keys():
         spectra.append(read_mat_file(os.path.join(
-            root_folder,case,"CBFMaps_2048","integration",
-            spectrum_file_name)))
+            root_folder,case
+            )))
 
     for rel_to in relative_to.keys():
         relative_to_spectra.append(
             read_mat_file(os.path.join(
-                root_folder,rel_to,"CBFMaps_2048","integration",
-                spectrum_file_name))
+                root_folder,rel_to,
+                ))
         )
 
     spectra_df = []
@@ -377,12 +574,12 @@ def compare_cases_relative(cases={},relative_to={},
                 )
 
         ax.plot(
-                frequencies,
+                array(frequencies)/1000.,
                 base_spectrum_third_octv-spectrum_third_octv,
                 line_styles[cnt],
                 color=palette.as_hex()[cnt],
                 label=c,
-                lw=4
+                lw=2
                 )
         crossover = interpolate_to_find_crossover(
             frequencies,base_spectrum_third_octv-spectrum_third_octv
@@ -395,19 +592,20 @@ def compare_cases_relative(cases={},relative_to={},
     freq_df = pd.DataFrame(
         dict( zip(frequencies,spectrum_third_octv) ),index=['spd']
     ).T
-    min_freq = min(freq_df[freq_df['spd']!=0].index)
-    max_freq = max(freq_df[freq_df['spd']!=0].index)
+    min_freq = min(freq_df[freq_df['spd']!=0].index)/1000.
+    max_freq = max(freq_df[freq_df['spd']!=0].index)/1000.
 
     #if title:
     #    plt.title(title)
+    ax.axhline(y=0,lw=2,c='k')
     ax.legend(loc="lower left",framealpha=0.5)
     #plt.semilogx()
-    ax.set_xlabel('$f$ [Hz]')
+    ax.set_xlabel('Frequency [kHz]')
     ax.set_ylabel("Reduction [dB]")
     ax.set_xlim(min_freq,max_freq)
     ax.set_ylim(-10,10)
     ax.set_xscale('log')
-    ax.set_xticks([1000,2000,3000,4000,5000])
+    ax.set_xticks([1.000,2.000,3.000,4.000,5.000])
     ax.get_xaxis().set_major_formatter(ScalarFormatter())
     plt.setp( ax.xaxis.get_majorticklabels(), rotation=0 )
     #ax.set_grid(True,which='both',ls="-", color='0.65')

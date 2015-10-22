@@ -129,3 +129,51 @@ def move_all_acoustic_data_to_local():
             os.path.join(acoustic_data_path,ac),
             os.path.join(destination,"psd_"+ac+'.mat')
         )
+
+def plot_interesting_cases():
+    from os import listdir
+    from acoustic_functions import plot_spectra
+
+    root = './AcousticData'
+    cases_to_plot = [f for f in listdir(root)\
+                     if 'STE' in f\
+                     or 'Sr20R21' in f]
+    cases_to_plot = [f for f in cases_to_plot\
+                     if not "repitability" in f\
+                     and not "Redo" in f\
+                     and '35' in f
+                    ]
+
+    plot_spectra(root,cases_to_plot,third_octave=True,
+                 output='./article_images/case35_spectra.png')
+
+def plot_article_relative_cases(alpha = 0, phi = 0):
+    import acoustic_functions as afunc
+    from collections import OrderedDict
+
+    cases = OrderedDict([
+            ("psd_Sr20R21_a{0:02d}_p{1}_U30".format(alpha,phi), 
+             "$U_\\infty = 30$ m/s".format(alpha)),
+            ("psd_Sr20R21_a{0:02d}_p{1}_U35".format(alpha,phi), 
+             "$U_\\infty = 35$ m/s".format(alpha)),
+            ("psd_Sr20R21_a{0:02d}_p{1}_U40".format(alpha,phi), 
+             "$U_\\infty = 40$ m/s".format(alpha)),
+            ])
+
+    relative_to = OrderedDict([
+            ("psd_STE_a{0:02d}_U30".format(alpha), 
+             "straight trailing edge, $\\alpha_g = 12^\circ$"),
+            ("psd_STE_a{0:02d}_U35".format(alpha), 
+             "straight trailing edge, $\\alpha_g = 12^\circ$"),
+            ("psd_STE_a{0:02d}_U40".format(alpha), 
+             "straight trailing edge, $\\alpha_g = 12^\circ$"),
+            ])
+    title = ""
+    afunc.compare_cases_relative(
+        './AcousticData/',
+        cases=cases,
+        relative_to=relative_to,
+        plot_name="article_images/Relative_a{0}_p{1}.png"\
+        .format(alpha,phi),
+        title=title
+    )
