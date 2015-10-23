@@ -4,13 +4,12 @@ import analyze_crossovers as xover
 import os
 
 #func.plot_interesting_cases()
-#func.plot_article_relative_cases(alpha=0  , phi=6)
-#func.plot_article_relative_cases(alpha=0  , phi=0)
-#func.plot_article_relative_cases(alpha=6  , phi=0)
-#func.plot_article_relative_cases(alpha=6  , phi=6)
-#func.plot_article_relative_cases(alpha=12 , phi=0)
-#func.plot_article_relative_cases(alpha=12 , phi=6)
-
+#func.plot_article_relative_cases(alpha=0  , phi=6, article=True)
+#func.plot_article_relative_cases(alpha=0  , phi=0, article=True)
+#func.plot_article_relative_cases(alpha=6  , phi=0, article=True)
+#func.plot_article_relative_cases(alpha=6  , phi=6, article=True)
+#func.plot_article_relative_cases(alpha=12 , phi=0, article=True)
+#func.plot_article_relative_cases(alpha=12 , phi=6, article=True)
 xover.plot_bl_crossover_relation(article=True)
 
 image_files = [os.path.join('./article_images',f) \

@@ -110,7 +110,7 @@ def plot_bl_crossover_relation(article=False,real_Uinf=True):
 
         sns.set_context('paper')
         sns.set_style("whitegrid")
-        sns.set(font='serif',font_scale=1.8,style='whitegrid')
+        sns.set(font='serif',font_scale=1.5,style='whitegrid')
         rc('font',family='serif', serif='cm10')
 
     crossover_df = get_crossovers()
@@ -271,20 +271,20 @@ def plot_bl_crossover_relation(article=False,real_Uinf=True):
                    transform=ax[0].transAxes,
                    fontsize=18
                   )
-    ax[0].text(0.01, 1.0, '$\\delta_{95,\\;\\mathrm{suction\\; side}}$',
+    ax[0].text(0.01, 1.0, '$\\delta_{95,\\;\\mathrm{s.s.}}$',
                horizontalalignment='left',
                verticalalignment='bottom',
                transform=ax[0].transAxes,
                fontsize=18
               )
-    ax[1].text(0.01, 1.0, '$\\delta_{95,\\;\\mathrm{pressure\\; side}}$',
+    ax[1].text(0.01, 1.0, '$\\delta_{95,\\;\\mathrm{p.s.}}$',
                horizontalalignment='left',
                verticalalignment='bottom',
                transform=ax[1].transAxes,
                fontsize=18
               )
     if not article:
-        ax[2].text(0.01, 1.0, '$\\delta_{\\mathrm{suction\, side}}+\\delta_{\\mathrm{pressure\, side}}$',
+        ax[2].text(0.01, 1.0, '$\\delta_{\\mathrm{s.s.}}+\\delta_{\\mathrm{p.s.}}$',
                    horizontalalignment='left',
                    verticalalignment='bottom',
                    transform=ax[2].transAxes

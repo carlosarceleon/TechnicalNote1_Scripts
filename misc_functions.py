@@ -147,7 +147,8 @@ def plot_interesting_cases():
     plot_spectra(root,cases_to_plot,third_octave=True,
                  output='./article_images/case35_spectra.png')
 
-def plot_article_relative_cases(alpha = 0, phi = 0):
+def plot_article_relative_cases(alpha = 0, phi = 0, article=True,
+                               draw_crossover_points=True):
     import acoustic_functions as afunc
     from collections import OrderedDict
 
@@ -175,5 +176,7 @@ def plot_article_relative_cases(alpha = 0, phi = 0):
         relative_to=relative_to,
         plot_name="article_images/Relative_a{0}_p{1}.png"\
         .format(alpha,phi),
-        title=title
+        title=title,
+        article=article,
+        draw_crossover_points=draw_crossover_points
     )

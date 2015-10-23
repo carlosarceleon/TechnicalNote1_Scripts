@@ -1,12 +1,18 @@
 import os
 import matplotlib.pyplot as plt
-from math import log10
+from math import log10,pi
 import pandas as pd
 from numpy import array
 import seaborn as sns
 from matplotlib import rc
 from matplotlib.ticker import ScalarFormatter
 
+z = 1.05
+# 1 / [ (4 \pi z)^2 * df ]
+# df = n_s / nfft
+acoustic_scaling_parameter = 1 / ( (4*pi*z)**2 * (50000*60/4096) )
+
+reference_pressure = 20e-6
 
 #rc('text',usetex=True)
 #
@@ -17,7 +23,7 @@ from matplotlib.ticker import ScalarFormatter
 #
 line_styles = ['-','--','-.',':']
 markers = [
-        u'o', u'v', u'^', u'<', u'>', u'8', u's', u'p', u'*', 
+        u'o', u's', u'^', u'<', u'>', u'8', u's', u'p', u'*', 
     u'h', u'H', u'D', u'd'
 ]
 #
@@ -31,7 +37,12 @@ markers = [
 
 def to_db(spd):
     #return spd
-    return 10.*array(map(log10,spd))
+    return 10.*array(
+        map(
+            log10,
+            spd * acoustic_scaling_parameter / reference_pressure**2
+        )
+    )
 
 def narrow_to_third_octave(frequencies,measurements):
     """ Calculates the equivalent third octave band spectrum
@@ -205,7 +216,7 @@ def compare_cases(cases={},plot_name="comparison.png",
                        spectrum_spd_db
                        )
            else:
-               spectrum_spd_db = 10.*array(map(log10,spectrum_spd))
+               spectrum_spd_db = to_db(spectrum_spd)
                frequencies = spectrum_frequencies
            plt.plot(frequencies,spectrum_spd_db,
                     color=palette.as_hex()[cnt],label=c,
@@ -273,9 +284,7 @@ def mat_to_df(root,case_mat_file):
 
     case_df_narrowband = case_df_narrowband[case_df_narrowband.psd!=0]
 
-    case_df_narrowband.dB = 10.*array(
-        map(log10,case_df_narrowband.psd)
-    )
+    case_df_narrowband.dB = to_db(case_df_narrowband.psd)
 
     third_oct_psd,third_oct_freqs = narrow_to_third_octave(
         case_df_narrowband.f,
@@ -316,27 +325,27 @@ def get_index(value,available_values):
 
     return argmin(abs(sort(unique(array(available_values)))-value))
 
+def my_annotate(ax, s, xy_arr=[], *args, **kwargs):
+    ans = []
+    an = ax.annotate(s, xy_arr[0], *args, **kwargs)
+    ans.append(an)
+    d = {}
+    try:
+        d['xycoords'] = kwargs['xycoords']
+    except KeyError:
+      pass
+    try:
+        d['arrowprops'] = kwargs['arrowprops']
+    except KeyError:
+        pass
+    for xy in xy_arr:
+        an = ax.annotate(s, xy, alpha=0.0, xytext=(0,0), 
+                         textcoords=an, **d)
+        ans.append(an)
+    return ans
+
 def plot_spectra(root,cases,third_octave=True,
                  output='case_spectra.png',crossover=True):
-    def my_annotate(ax, s, xy_arr=[], *args, **kwargs):
-        ans = []
-        an = ax.annotate(s, xy_arr[0], *args, **kwargs)
-        ans.append(an)
-        d = {}
-        try:
-            d['xycoords'] = kwargs['xycoords']
-        except KeyError:
-          pass
-        try:
-            d['arrowprops'] = kwargs['arrowprops']
-        except KeyError:
-            pass
-        for xy in xy_arr:
-            an = ax.annotate(s, xy, alpha=0.0, xytext=(0,0), 
-                             textcoords=an, **d)
-            ans.append(an)
-        return ans
-
     import matplotlib.pyplot as plt
     import matplotlib.lines as mlines
     import seaborn as sns
@@ -346,13 +355,13 @@ def plot_spectra(root,cases,third_octave=True,
 
     sns.set_context('paper')
     sns.set_style("whitegrid")
-    sns.set(font='serif',font_scale=2.0,style='whitegrid')
+    sns.set(font='serif',font_scale=1.5,style='whitegrid')
     rc('font',family='serif', serif='cm10')
 
     velocities = [30,35,40]
     alphas     = [0,6,12]
     phis       = [0,6]
-    palette = sns.color_palette("cubehelix", n_colors=len(alphas)+1)
+    palette = sns.color_palette("cubehelix", n_colors=len(alphas))
     lines = ["--","-.",":"]
 
     fig,ax = plt.subplots(1,1)
@@ -376,19 +385,21 @@ def plot_spectra(root,cases,third_octave=True,
                 crossovers.append(crossover_f/1000.)
 
         color = palette[get_index(ac_data.alpha.unique()[0],alphas)]
+        marker = markers[get_index(ac_data.alpha.unique()[0],alphas)]
         ax.plot(
             ac_data.f/1000.,
             ac_data.dB,
             ls = ls,
-            color = color
+            color = color,
+            marker=marker
         )
 
-    crossover_levels = [-72,-65,-67]
+    crossover_levels = [-29,-21.8,-24]
 
     my_annotate(ax,
-            '$f_0$',
+            '$f_\\textrm{c}$',
             xy_arr=zip(crossovers,crossover_levels), xycoords='data',
-            xytext=(3.1,-63), textcoords='data',
+            xytext=(3.1,-19), textcoords='data',
             arrowprops=dict(arrowstyle="-",
                             connectionstyle="arc3,rad=0.2",
                             lw=2,
@@ -399,15 +410,15 @@ def plot_spectra(root,cases,third_octave=True,
     ax.set_xscale('log')
     ax.set_xticks([1,2,3,4,5])
     ax.set_xlim(1,5.000)
-    ax.set_ylim(-95,-58)
-    ax.set_ylabel("Trailing edge noise emissions [dB]")
+    ax.set_ylim(-43,-16)
+    ax.set_ylabel("Trailing edge noise SPL [dB]")
     ax.set_xlabel("Frequency [kHz]")
     ax.get_xaxis().set_major_formatter(ScalarFormatter())
     plt.setp( ax.xaxis.get_majorticklabels(), rotation=0 )
 
-    a0_legend   = mlines.Line2D([], [], color=palette[0])
-    a6_legend   = mlines.Line2D([], [], color=palette[1])
-    a12_legend  = mlines.Line2D([], [], color=palette[2])
+    a0_legend   = mlines.Line2D([], [], color=palette[0],marker='o')
+    a6_legend   = mlines.Line2D([], [], color=palette[1],marker='^')
+    a12_legend  = mlines.Line2D([], [], color=palette[2],marker='s')
     ste_legend  = mlines.Line2D([], [], color='k',ls='-')
     p0_legend   = mlines.Line2D([], [], color='k',ls='--')
     p6_legend   = mlines.Line2D([], [], color='k',ls='-.')
@@ -465,8 +476,8 @@ def get_crossover(root_folder,case,relative_to):
     )
     relative_to_spectrum_df = pd.DataFrame(
         data = {
-            "f" : relative_to_spectrum['f'][0],
-            'psd' :relative_to_spectrum['psd'][0]
+            "f"   : relative_to_spectrum['f'][0],
+            'psd' : relative_to_spectrum['psd'][0]
             }, 
         index=range(len(relative_to_spectrum['f'][0]))
     )
@@ -481,13 +492,13 @@ def get_crossover(root_folder,case,relative_to):
         relative_to_spectrum_df['psd']!=0]['psd'].values
     
     spectrum_third_octv,frequencies = narrow_to_third_octave(
-            spectrum_frequencies,
-            10.*array(map(log10,spectrum_spd))
-            )
+        spectrum_frequencies,
+        to_db(spectrum_spd)
+    )
     base_spectrum_third_octv,frequencies_base = \
             narrow_to_third_octave(
-            base_spectrum_frequencies,
-            10*array(map(log10,base_spectrum_spd))
+                base_spectrum_frequencies,
+                to_db(base_spectrum_spd)
             )
 
     crossover = interpolate_to_find_crossover(
@@ -497,8 +508,19 @@ def get_crossover(root_folder,case,relative_to):
 
 def compare_cases_relative(root_folder,cases={},relative_to={},
                            plot_name="comparison_relative.png",
-                           title=True,campaign='MarchData'):
+                           title=True,campaign='MarchData',
+                           article=False,
+                           draw_crossover_points=False):
     from numpy import array
+    from matplotlib import rc
+
+    if article:
+        rc('text',usetex=True)
+
+        sns.set_context('paper')
+        sns.set_style("whitegrid")
+        sns.set(font='serif',font_scale=1.5,style='whitegrid')
+        rc('font',family='serif', serif='cm10')
 
     spectrum_file_name = 'psd_pointsource.mat'
 
@@ -545,6 +567,7 @@ def compare_cases_relative(root_folder,cases={},relative_to={},
     ax = plt.subplot(111)
 
     crossover_file = open(os.path.splitext(plot_name)[0]+".csv",'w')
+    crossovers = []
     for s,c,cnt in zip(spectra_df,cases.values(),
                        range(len(cases.values()))):
         if len(relative_to.values())==1:
@@ -564,29 +587,31 @@ def compare_cases_relative(root_folder,cases={},relative_to={},
         base_spectrum_spd         = r[r['psd']!=0]['psd'].values
 
         spectrum_third_octv,frequencies = narrow_to_third_octave(
-                spectrum_frequencies,
-                10.*array(map(log10,spectrum_spd))
-                )
+            spectrum_frequencies,
+            to_db(spectrum_spd)
+        )
         base_spectrum_third_octv,frequencies_base = \
                 narrow_to_third_octave(
-                base_spectrum_frequencies,
-                10*array(map(log10,base_spectrum_spd))
+                    base_spectrum_frequencies,
+                    to_db(base_spectrum_spd)
                 )
 
         ax.plot(
-                array(frequencies)/1000.,
-                base_spectrum_third_octv-spectrum_third_octv,
-                line_styles[cnt],
-                color=palette.as_hex()[cnt],
-                label=c,
-                lw=2
-                )
+            array(frequencies)/1000.,
+            base_spectrum_third_octv-spectrum_third_octv,
+            line_styles[cnt],
+            color=palette.as_hex()[cnt],
+            label=c,
+            lw=2,
+            marker=markers[cnt]
+        )
         crossover = interpolate_to_find_crossover(
             frequencies,base_spectrum_third_octv-spectrum_third_octv
         )
         crossover_file.write(
             "{0},{1:.0f}\n".format(c,crossover)
         )
+        crossovers.append(crossover/1000.)
     crossover_file.close()
 
     freq_df = pd.DataFrame(
@@ -594,6 +619,20 @@ def compare_cases_relative(root_folder,cases={},relative_to={},
     ).T
     min_freq = min(freq_df[freq_df['spd']!=0].index)/1000.
     max_freq = max(freq_df[freq_df['spd']!=0].index)/1000.
+
+    if draw_crossover_points:
+        for cross in crossovers:
+            ax.annotate("$f_{\\textrm{c}}$", 
+                        xy=(cross,0), 
+                        xytext=(3.1,6),
+                        #alpha=0.0, 
+                        textcoords='data', 
+                        arrowprops=dict(arrowstyle="-",
+                                        connectionstyle="arc3,rad=0.2",
+                                        lw=2,
+                                        fc="k"),
+                            fontsize=20
+                       )
 
     #if title:
     #    plt.title(title)
