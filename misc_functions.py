@@ -130,7 +130,7 @@ def move_all_acoustic_data_to_local():
             os.path.join(destination,"psd_"+ac+'.mat')
         )
 
-def plot_interesting_cases():
+def plot_interesting_cases(phi=6):
     from os import listdir
     from acoustic_functions import plot_spectra
 
@@ -138,14 +138,27 @@ def plot_interesting_cases():
     cases_to_plot = [f for f in listdir(root)\
                      if 'STE' in f\
                      or 'Sr20R21' in f]
-    cases_to_plot = [f for f in cases_to_plot\
-                     if not "repitability" in f\
-                     and not "Redo" in f\
-                     and '35' in f
-                    ]
+    if phi==6:
+        cases_to_plot = [f for f in cases_to_plot\
+                         if not "repitability" in f\
+                         and not "Redo" in f\
+                         and '35' in f\
+                         and not 'p0' in f
+                        ]
+        plot_spectra(root,cases_to_plot,third_octave=True,
+                     output='./article_images/case35_spectra_p6.png',
+                    phi = phi)
 
-    plot_spectra(root,cases_to_plot,third_octave=True,
-                 output='./article_images/case35_spectra.png')
+    elif phi==0:
+        cases_to_plot = [f for f in cases_to_plot\
+                         if not "repitability" in f\
+                         and not "Redo" in f\
+                         and '35' in f\
+                         and not 'p6' in f
+                        ]
+        plot_spectra(root,cases_to_plot,third_octave=True,
+                     output='./article_images/case35_spectra_p0.png',
+                    phi = phi)
 
 def plot_article_relative_cases(alpha = 0, phi = 0, article=True,
                                draw_crossover_points=True):

@@ -35,14 +35,29 @@ markers = [
 #        '#DAB785',
 #        ]
 
-def to_db(spd):
-    #return spd
-    return 10.*array(
-        map(
-            log10,
-            spd * acoustic_scaling_parameter / reference_pressure**2
+def to_db(spd,debug=False):
+
+    if not debug:
+        return 10.*array(
+            map(
+                log10,
+                spd * acoustic_scaling_parameter / reference_pressure**2
+            )
         )
-    )
+    else:
+        from numpy import zeros
+        db = zeros(len(spd))
+        for s,i in zip(spd,range(len(spd))):
+            try:
+                db[i] = 10* log10(
+                    s*acoustic_scaling_parameter/reference_pressure**2
+                )
+            except ValueError:
+                print s
+                raise
+        return db
+
+
 
 def narrow_to_third_octave(frequencies,measurements):
     """ Calculates the equivalent third octave band spectrum
@@ -115,11 +130,77 @@ def read_mat_file(mat_file):
     from scipy.io import loadmat
     return loadmat(mat_file)
 
+def plot_source_power_map(map_file,res_file = False,article=True):
+    import matplotlib.pyplot as plt
+    from numpy import meshgrid, array, linspace
+    import seaborn as sns
+    import pandas as pd
+    from pprint import pprint
+
+
+    if article:
+        rc('text',usetex=True)
+
+        sns.set_context('paper')
+        sns.set_style("whitegrid")
+        sns.set(font='serif',font_scale=2.0,style='whitegrid')
+        rc('font',family='serif', serif='cm10')
+        rc('grid',linestyle='--')
+
+    if res_file:
+        res_data= read_mat_file(res_file)
+        pprint(res_data['res_x'][0])
+        resolution_df = pd.DataFrame( data = {
+            'x' : res_data['res_x'][0],
+            'y' : res_data['res_y'][0],
+            'f' : res_data['f'][0],
+        })
+
+    mat_data = read_mat_file(map_file)
+
+    x = mat_data['xs'][0]
+    y = mat_data['ys'][0]
+    A = mat_data['A'].ravel()
+
+    fig = plt.figure()
+    ax = fig.add_subplot(1,1,1,aspect='equal')
+    X,Y = meshgrid(x,y)
+    sound_map_df = pd.DataFrame(data={
+        'x':X.ravel(),
+        'y':Y.ravel(),
+        'A':A
+    })
+    #print sound_map_df.A.ix[sound_map_df.A>0]
+    sound_map_df.A = to_db(
+        array(map(abs,sound_map_df.A.values)),
+        debug=True)
+    sound_map_df.A = sound_map_df.A - sound_map_df.A.max()
+    levels = linspace(-12,0,13)
+    cntf = ax.contourf(
+        Y,
+        X,
+        sound_map_df.A.reshape(X.shape),
+        levels = levels,
+        zorder=0
+    )
+    ax.xaxis.grid()
+    ax.yaxis.grid()
+    ax.axhspan(0.04, 0.14, xmin=0.4, xmax=0.6,
+              facecolor='none',
+              lw=3,ec='lightgray',ls='dashed')
+    clb = plt.colorbar(cntf)
+    clb.ax.set_ylabel("$\\Delta\\textrm{SPL}$ [dB]")
+    ax.set_xlabel('$z$ [m]')
+    ax.set_ylabel('$x$ [m]')
+    plt.grid()
+
+    plt.savefig('./article_images/source_map.png',bbox_inches='tight')
+
+
 def compare_cases(cases={},plot_name="comparison.png",
                   use_third_octave=True,relative_to=False,
                   campaign='MarchData'):
     import pandas as pd
-    spectrum_file_name = 'psd_pointsource.mat'
 
     root_folder = os.path.join(
         "/media/carlos/6E34D2CD34D29783/2015-03_SerrationAcoustics/",
@@ -345,7 +426,7 @@ def my_annotate(ax, s, xy_arr=[], *args, **kwargs):
     return ans
 
 def plot_spectra(root,cases,third_octave=True,
-                 output='case_spectra.png',crossover=True):
+                 output='case_spectra.png',crossover=True,phi=6):
     import matplotlib.pyplot as plt
     import matplotlib.lines as mlines
     import seaborn as sns
@@ -355,14 +436,14 @@ def plot_spectra(root,cases,third_octave=True,
 
     sns.set_context('paper')
     sns.set_style("whitegrid")
-    sns.set(font='serif',font_scale=1.5,style='whitegrid')
+    sns.set(font='serif',font_scale=1.9,style='whitegrid')
     rc('font',family='serif', serif='cm10')
 
     velocities = [30,35,40]
     alphas     = [0,6,12]
     phis       = [0,6]
     palette = sns.color_palette("cubehelix", n_colors=len(alphas))
-    lines = ["--","-.",":"]
+    lines = ["--","--",":"]
 
     fig,ax = plt.subplots(1,1)
     crossovers = []
@@ -396,16 +477,19 @@ def plot_spectra(root,cases,third_octave=True,
 
     crossover_levels = [-29,-21.8,-24]
 
-    my_annotate(ax,
-            '$f_\\textrm{c}$',
-            xy_arr=zip(crossovers,crossover_levels), xycoords='data',
-            xytext=(3.1,-19), textcoords='data',
-            arrowprops=dict(arrowstyle="-",
-                            connectionstyle="arc3,rad=0.2",
-                            lw=2,
-                            fc="k"),
-                fontsize=20
-               )
+    if len(crossovers):
+        print crossovers
+        my_annotate(ax,
+                    '$f_\\textrm{c}$',
+                    xy_arr=zip(crossovers,crossover_levels), 
+                    xycoords='data',
+                    xytext=(3.1,-19), textcoords='data',
+                    arrowprops=dict(arrowstyle="-",
+                                    connectionstyle="arc3,rad=0.2",
+                                    lw=2,
+                                    fc="k"),
+                    fontsize=20
+                   )
 
     ax.set_xscale('log')
     ax.set_xticks([1,2,3,4,5])
@@ -420,24 +504,26 @@ def plot_spectra(root,cases,third_octave=True,
     a6_legend   = mlines.Line2D([], [], color=palette[1],marker='^')
     a12_legend  = mlines.Line2D([], [], color=palette[2],marker='s')
     ste_legend  = mlines.Line2D([], [], color='k',ls='-')
-    p0_legend   = mlines.Line2D([], [], color='k',ls='--')
-    p6_legend   = mlines.Line2D([], [], color='k',ls='-.')
+    #p0_legend   = mlines.Line2D([], [], color='k',ls='--')
+    srTE_legend   = mlines.Line2D([], [], color='k',ls='--')
+    none   = mlines.Line2D([], [], color='w',ls='')
 
     plt.legend([
         a0_legend,
         a6_legend,
         a12_legend,
-        p0_legend,
-        p6_legend,
+        none,
         ste_legend,
+        srTE_legend,
     ],
         [
             '$\\alpha_g=0^\\circ$',
             '$\\alpha_g=6^\\circ$',
             '$\\alpha_g=12^\\circ$',
-            '$\\varphi=0^\\circ$',
-            '$\\varphi=6^\\circ$',
+            #'$\\varphi=0^\\circ$',
+            '',
             'Straight edge',
+            'Serrated edge, $\\varphi={{{0}}}^\\circ$'.format(phi),
         ],
         loc='lower left',
         ncol=2,
@@ -640,7 +726,7 @@ def compare_cases_relative(root_folder,cases={},relative_to={},
     ax.legend(loc="lower left",framealpha=0.5)
     #plt.semilogx()
     ax.set_xlabel('Frequency [kHz]')
-    ax.set_ylabel("Reduction [dB]")
+    ax.set_ylabel("Reduction, $\\Delta\\textrm{SPL}$ [dB]")
     ax.set_xlim(min_freq,max_freq)
     ax.set_ylim(-10,10)
     ax.set_xscale('log')

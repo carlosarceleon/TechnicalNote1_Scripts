@@ -251,12 +251,12 @@ def plot_bl_crossover_relation(article=False,real_Uinf=True):
     ax[-1].set_xticks([0,6,12])
     ax[-1].set_xlabel("$\\alpha_g$ [deg]")
     if not article:
-        ax[1].set_ylabel("$\\mathrm{St}=f_0\\delta_{95}/U_\\infty$")
+        ax[1].set_ylabel("$\\mathrm{St}_\\mathrm{c}=f_\\mathrm_{c}\\delta_{95}/U_e$")
     else:
         ax[0].text(
             -0.13,
             -0.1,
-            "$\\mathrm{St}=f_0\\delta_{95}/U_\\infty$",
+            "$\\mathrm{St}_\\mathrm{c}=f_\\mathrm{c}\\delta_{95}/U_e$",
             transform=ax[0].transAxes,
             ha='center',
             va='center',
