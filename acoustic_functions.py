@@ -185,9 +185,14 @@ def plot_source_power_map(map_file,res_file = False,article=True):
     )
     ax.xaxis.grid()
     ax.yaxis.grid()
+    # Airfoil location
+    ax.axhspan(-0.10, 0.10, xmin=0.3, xmax=0.7,
+              facecolor='none',
+              lw=2,ec='darkgray',ls='solid')
+    # Integration area
     ax.axhspan(0.04, 0.14, xmin=0.4, xmax=0.6,
               facecolor='none',
-              lw=3,ec='lightgray',ls='dashed')
+              lw=2,ec='lightgray',ls='dashed')
     clb = plt.colorbar(cntf)
     clb.ax.set_ylabel("$\\Delta\\textrm{SPL}$ [dB]")
     ax.set_xlabel('$z$ [m]')

@@ -18,6 +18,7 @@ afunc.plot_source_power_map('./Data/4565.mat')
 image_files = [os.path.join('./article_images',f) \
                for f in os.listdir("./article_images/")\
                if f.endswith('.png')]
+print image_files
 
 for image in image_files:
     copy(image,'../3438747gwkrqg/')
